@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulador Didático · CLP Rockwell ↔ ATV600 · Modbus TCP</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root{
+  --bg:#080b12;
+  --panel:#0f141e;
+  --panel2:#141b28;
+  --line:#212b3a;
+  --line-soft:#1a2231;
+  --text:#e8edf7;
+  --dim:#7c8aa0;
+  --faint:#4a5468;
+  --write:#4c8dff;      /* CLP -> Inversor (escrita) */
+  --write-dim:#2a3f63;
+  --read:#34d399;       /* Inversor -> CLP (leitura) */
+  --read-dim:#1e4a3d;
+  --amber:#ffb020;
+  --alarm:#ff4d6a;
+  --off:#2a3242;
+  --radius:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{
+  height:100vh; width:100vw; overflow:hidden;
+  background:var(--bg); color:var(--text);
+  font-family:'Inter',sans-serif;
+}
+body{
+  background-image:
+    radial-gradient(circle at 15% 10%, rgba(76,141,255,0.05), transparent 40%),
+    radial-gradient(circle at 85% 90%, rgba(52,211,153,0.05), transparent 40%),
+    linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+  background-size: auto, auto, 28px 28px, 28px 28px;
+  display:flex; flex-direction:column;
+  padding:12px; gap:10px;
+}
+.mono{font-family:'JetBrains Mono',monospace;}
+
+/* ============ HEADER ============ */
+.header{
+  flex:0 0 auto;
+  display:flex; align-items:center; justify-content:space-between;
+  background:linear-gradient(180deg,#131a27,#0d121b);
+  border:1px solid var(--line); border-radius:var(--radius);
+  padding:10px 18px; position:relative; overflow:hidden;
+}
+.header::after{
+  content:''; position:absolute; left:0; right:0; bottom:0; height:2px;
+  background:linear-gradient(90deg,var(--write),var(--read)); opacity:.6;
+}
+.htitle .eyebrow{font-size:10px; letter-spacing:.16em; color:var(--dim); text-transform:uppercase; font-weight:700;}
+.htitle h1{font-size:17px; font-weight:800; margin-top:2px; letter-spacing:.01em;}
+.htitle h1 .arrow{color:var(--dim); font-weight:500; padding:0 6px;}
+.htitle h1 .rk{color:var(--write);}
+.htitle h1 .at{color:var(--read);}
+.hright{display:flex; align-items:center; gap:10px;}
+.scanpill{
+  display:flex; align-items:center; gap:8px;
+  background:var(--panel2); border:1px solid var(--line); border-radius:20px;
+  padding:6px 14px 6px 10px;
+}
+.dot{width:7px; height:7px; border-radius:50%; background:var(--read); box-shadow:0 0 6px var(--read); animation:blink 1s infinite steps(2);}
+@keyframes blink{0%,49%{opacity:1;}50%,100%{opacity:.25;}}
+.scanpill .t{font-size:11px; color:var(--dim); font-weight:600;}
+.scanpill .v{font-size:11.5px; color:var(--text); font-weight:700;}
+.protopill{
+  font-size:10px; font-weight:800; letter-spacing:.05em; padding:6px 12px; border-radius:20px;
+  background:linear-gradient(135deg, rgba(76,141,255,0.15), rgba(52,211,153,0.15));
+  border:1px solid var(--line); color:var(--dim);
+}
+.stamp{display:flex; align-items:center; gap:8px; padding:5px 12px 5px 5px; background:var(--panel2); border:1px solid var(--line); border-radius:20px;}
+.stamp .avatar{width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,var(--write),var(--read)); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:10.5px; color:#0a0e14; flex:0 0 auto;}
+.stamp .sname{font-size:11px; font-weight:800; color:var(--text); line-height:1.2;}
+.stamp .srole{font-size:8.5px; color:var(--dim); line-height:1.2;}
+
+/* ============ MAIN GRID ============ */
+.main{flex:1 1 auto; display:grid; grid-template-columns: 1.05fr 1.05fr 1.15fr; gap:10px; min-height:0;}
+.panel{
+  background:linear-gradient(180deg,#121826,var(--panel));
+  border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px 16px; display:flex; flex-direction:column; gap:10px; min-height:0;
+}
+.ptitle{
+  font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); font-weight:700;
+  display:flex; align-items:center; gap:7px; flex:0 0 auto;
+}
+.ptitle .bar{width:3px; height:12px; border-radius:2px; display:inline-block;}
+.ptitle.write .bar{background:linear-gradient(180deg,var(--write),#2a5cc4);}
+.ptitle.center .bar{background:linear-gradient(180deg,var(--amber),#b87715);}
+.ptitle.read .bar{background:linear-gradient(180deg,var(--read),#1b8f63);}
+.ptitle .sub{margin-left:auto; font-size:9px; color:var(--faint); font-weight:600; text-transform:none; letter-spacing:0;}
+
+/* ---------- LEFT: CLP command ---------- */
+.btnrow{display:grid; grid-template-columns:1fr 1fr; gap:8px; flex:0 0 auto;}
+.btn{
+  border:1px solid var(--line-soft); border-radius:8px; padding:12px 6px; text-align:center;
+  cursor:pointer; font-weight:800; font-size:12px; letter-spacing:.03em; background:var(--panel2);
+  color:var(--dim); transition:all .12s ease; user-select:none; position:relative;
+}
+.btn:active{transform:scale(.96);}
+.btn.start{color:var(--read); border-color:var(--read-dim);}
+.btn.start:hover{background:rgba(52,211,153,0.1); border-color:var(--read);}
+.btn.stop{color:var(--alarm); border-color:#5c2331;}
+.btn.stop:hover{background:rgba(255,77,106,0.1); border-color:var(--alarm);}
+.btn.reset{grid-column:1 / -1; color:var(--amber); border-color:#5c4319;}
+.btn.reset:hover{background:rgba(255,176,32,0.1); border-color:var(--amber);}
+.btn.disabled{opacity:.3; cursor:not-allowed; pointer-events:none;}
+.faultlink{
+  flex:0 0 auto; text-align:center; font-size:9.5px; color:var(--faint); cursor:pointer;
+  text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px;
+}
+.faultlink:hover{color:var(--alarm);}
+
+.eventloghead{font-size:9px; text-transform:uppercase; letter-spacing:.07em; color:var(--faint); font-weight:700; flex:0 0 auto;}
+.eventlog{
+  flex:0 0 68px; overflow-y:auto; background:#060810; border:1px solid var(--line-soft); border-radius:6px;
+  padding:5px 9px; font-family:'JetBrains Mono',monospace; font-size:9.5px; line-height:1.55;
+}
+.eventlog .row{white-space:nowrap; opacity:0; animation:login .3s ease forwards;}
+@keyframes login{ from{opacity:0; transform:translateY(-3px);} to{opacity:1; transform:translateY(0);} }
+.eventlog .ts{color:var(--faint);}
+.eventlog .msg.cmd{color:var(--write);}
+.eventlog .msg.ok{color:var(--read);}
+.eventlog .msg.warn{color:var(--amber);}
+.eventlog .msg.alarm{color:var(--alarm); font-weight:600;}
+.eventlog::-webkit-scrollbar{width:4px;}
+.eventlog::-webkit-scrollbar-thumb{background:var(--line-soft); border-radius:2px;}
+
+.wordblock{flex:0 0 auto; display:flex; flex-direction:column; gap:6px;}
+.wordlabel{display:flex; justify-content:space-between; align-items:baseline;}
+.wordlabel .n{font-size:10.5px; font-weight:700; color:var(--text);}
+.wordlabel .h{font-size:11px; font-weight:700;}
+.wordlabel.write .h{color:var(--write);}
+.wordlabel.read .h{color:var(--read);}
+.bitgrid{display:grid; grid-template-columns:repeat(16,1fr); gap:3px;}
+.bit{
+  aspect-ratio:1/1; border-radius:4px; background:var(--off); border:1px solid var(--line-soft);
+  display:flex; align-items:center; justify-content:center;
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; color:var(--faint);
+  transition:all .15s ease;
+}
+.bit.on.write{background:rgba(76,141,255,0.18); border-color:var(--write); color:var(--write); box-shadow:0 0 8px rgba(76,141,255,0.35);}
+.bit.on.read{background:rgba(52,211,153,0.18); border-color:var(--read); color:var(--read); box-shadow:0 0 8px rgba(52,211,153,0.35);}
+.bit.pulse{animation:bitpulse .5s ease;}
+@keyframes bitpulse{0%{transform:scale(1);}40%{transform:scale(1.18);}100%{transform:scale(1);}}
+.bitnums{display:grid; grid-template-columns:repeat(16,1fr); gap:3px;}
+.bitnums span{text-align:center; font-size:7px; color:var(--faint); font-family:'JetBrains Mono',monospace;}
+.legend{font-size:9px; color:var(--faint); line-height:1.5; flex:0 0 auto;}
+.legend b{color:var(--dim);}
+
+.sliderblock{flex:1 1 auto; display:flex; flex-direction:column; justify-content:flex-end; gap:6px; min-height:0;}
+.sliderhead{display:flex; justify-content:space-between; align-items:baseline;}
+.sliderhead .n{font-size:10.5px; font-weight:700; color:var(--text);}
+.sliderhead .v{font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; color:var(--amber);}
+input[type=range]{
+  -webkit-appearance:none; width:100%; height:5px; border-radius:3px;
+  background:linear-gradient(90deg, var(--amber) var(--pct,0%), var(--line-soft) var(--pct,0%));
+  outline:none;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; width:16px; height:16px; border-radius:50%;
+  background:var(--amber); cursor:pointer; border:2px solid #1a1200; box-shadow:0 0 6px rgba(255,176,32,.6);
+}
+.sliderticks{display:flex; justify-content:space-between; font-size:8px; color:var(--faint); font-family:'JetBrains Mono',monospace;}
+
+/* ---------- CENTER: ATV600 + Motor ---------- */
+.center-body{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:0;}
+.statusbadge{
+  display:flex; align-items:center; gap:7px; padding:6px 16px; border-radius:20px;
+  font-size:12px; font-weight:800; letter-spacing:.05em;
+  background:rgba(124,138,160,0.12); border:1px solid rgba(124,138,160,0.35); color:var(--dim);
+  transition:all .25s ease; flex:0 0 auto;
+}
+.statusbadge .led{width:8px; height:8px; border-radius:50%; background:var(--off);}
+.statusbadge.marcha{background:rgba(52,211,153,0.12); border-color:rgba(52,211,153,.4); color:var(--read);}
+.statusbadge.marcha .led{background:var(--read); box-shadow:0 0 7px var(--read);}
+.statusbadge.partindo{background:rgba(255,176,32,0.12); border-color:rgba(255,176,32,.4); color:var(--amber);}
+.statusbadge.partindo .led{background:var(--amber); box-shadow:0 0 7px var(--amber); animation:blink .6s infinite steps(2);}
+.statusbadge.falha{background:rgba(255,77,106,0.14); border-color:rgba(255,77,106,.45); color:var(--alarm); animation:blink 1s infinite steps(2);}
+.statusbadge.falha .led{background:var(--alarm); box-shadow:0 0 7px var(--alarm);}
+
+.rotorwrap{position:relative; width:min(30vh,190px); height:min(30vh,190px); flex:0 1 auto;}
+.rotorwrap svg{width:100%; height:100%;}
+#rotor{transform-origin:100px 100px; transition:filter .3s ease, color .4s ease; color:#3a445c;}
+.rotor-hub{filter:drop-shadow(0 0 10px rgba(0,0,0,.4));}
+
+.centerreadouts{display:flex; gap:20px; flex:0 0 auto;}
+.creadout{text-align:center;}
+.creadout .cv{font-family:'JetBrains Mono',monospace; font-size:19px; font-weight:700; color:var(--text);}
+.creadout .cl{font-size:8.5px; color:var(--faint); text-transform:uppercase; letter-spacing:.08em; margin-top:1px;}
+
+.devicecard{
+  flex:0 0 auto; width:100%; background:var(--panel2); border:1px solid var(--line-soft); border-radius:8px;
+  padding:8px 12px; display:flex; justify-content:space-between; align-items:center;
+}
+.devicecard .dn{font-size:10px; color:var(--dim); font-weight:700;}
+.devicecard .dv{font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--faint);}
+
+.regstrip{display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; flex:0 0 auto; width:100%;}
+.regitem{
+  background:var(--panel2); border:1px solid var(--line-soft); border-radius:6px;
+  padding:5px 4px; text-align:center; display:flex; flex-direction:column; gap:1px;
+}
+.regitem .ra{font-family:'JetBrains Mono',monospace; font-size:8px; color:var(--faint);}
+.regitem .rn{font-size:7.5px; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; font-weight:700;}
+.regitem .rv{font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--amber); font-weight:700;}
+.regnote{font-size:8px; color:var(--faint); text-align:center; flex:0 0 auto;}
+
+/* ---------- RIGHT: status word + readings ---------- */
+.readgrid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; flex:1 1 auto; min-height:0;}
+.readcard{
+  background:var(--panel2); border:1px solid var(--line-soft); border-radius:8px;
+  padding:10px 8px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+  transition:border-color .2s ease;
+}
+.readcard.warn{border-color:rgba(255,77,106,.5); background:rgba(255,77,106,0.06);}
+.readcard .rv{font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; color:var(--text);}
+.readcard.warn .rv{color:var(--alarm);}
+.readcard .ru{font-size:9px; color:var(--faint);}
+.readcard .rl{font-size:8.5px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; text-align:center;}
+
+/* ============ FOOTER TICKER (signature element) ============ */
+.footer{
+  flex:0 0 auto; background:#060810; border:1px solid var(--line); border-radius:8px;
+  padding:8px 16px; display:flex; align-items:center; gap:14px; overflow:hidden;
+}
+.footer .fc{
+  flex:0 0 auto; font-size:9px; font-weight:800; letter-spacing:.08em; color:var(--faint);
+  text-transform:uppercase; display:flex; align-items:center; gap:6px;
+}
+.footer .fc .txrx{width:6px; height:6px; border-radius:50%; background:var(--off);}
+.footer .fc.tx .txrx.active{background:var(--write); box-shadow:0 0 6px var(--write);}
+.footer .fc.rx .txrx.active{background:var(--read); box-shadow:0 0 6px var(--read);}
+#frameLine{
+  flex:1; font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--dim);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+#frameLine .fn{color:var(--write); font-weight:700;}
+#frameLine .fn2{color:var(--read); font-weight:700;}
+#frameLine .addr{color:var(--text);}
+.footer .rtt{flex:0 0 auto; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--faint);}
+.footer .rtt b{color:var(--amber);}
+
+/* ============ MOBILE FALLBACK ============
+   O layout acima é "1 tela, sem scroll" pensado para monitor (100vh/100vw).
+   Em celular isso não cabe de verdade — aqui ele empilha os 3 blocos e libera
+   rolagem vertical, mantendo a demo automática rodando normalmente. */
+@media (max-width: 900px){
+  html,body{height:auto; min-height:100vh; overflow-y:auto; overflow-x:hidden;}
+  body{padding:10px; gap:10px;}
+  .header{flex-wrap:wrap; row-gap:10px; padding:12px;}
+  .htitle h1{font-size:15px;}
+  .hright{flex-wrap:wrap; justify-content:flex-start; width:100%; gap:8px;}
+  .main{display:flex; flex-direction:column; gap:10px;}
+  .panel{min-height:auto;}
+  .bitgrid{overflow-x:auto; grid-template-columns:repeat(16,minmax(20px,1fr));}
+  .rotorwrap{width:170px; height:170px; margin:0 auto;}
+  .footer{flex-wrap:wrap; row-gap:8px;}
+  #frameLine{white-space:normal; font-size:10px; line-height:1.5;}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="htitle">
+    <div class="eyebrow">Simulador Didático de Comissionamento</div>
+    <h1><span class="rk">CLP ROCKWELL</span><span class="arrow">↔</span><span class="at">ATV600</span> via Modbus TCP</h1>
+  </div>
+  <div class="hright">
+    <div class="stamp">
+      <div class="avatar">IF</div>
+      <div class="stxt">
+        <div class="sname">Iderlan Freitas</div>
+        <div class="srole">Engenheiro Eletricista</div>
+      </div>
+    </div>
+    <div class="protopill mono">MODBUS TCP · POLL 100ms</div>
+    <div class="scanpill">
+      <span class="dot" id="scanDot"></span>
+      <span class="t">Scan</span>
+      <span class="v mono" id="scanCount">#0</span>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ===== LEFT: CLP command ===== -->
+  <div class="panel">
+    <div class="ptitle write"><span class="bar"></span>CLP Rockwell — Comando<span class="sub">Escrita</span></div>
+
+    <div class="btnrow">
+      <div class="btn start" id="btnStart">▶ LIGAR<br><span style="font-size:8px;font-weight:600;">START</span></div>
+      <div class="btn stop" id="btnStop">■ DESLIGAR<br><span style="font-size:8px;font-weight:600;">STOP</span></div>
+      <div class="btn reset" id="btnReset">⟲ RESET DE FALHA</div>
+    </div>
+    <div class="faultlink" id="faultLink">⚠ simular falha agora (didático)</div>
+
+    <div class="eventloghead">Histórico de Comandos (o que acontece, em ordem)</div>
+    <div class="eventlog" id="cmdLog"></div>
+
+    <div class="wordblock">
+      <div class="wordlabel write">
+        <span class="n">Control Word (40001)</span>
+        <span class="h mono" id="cwHex">0x0000</span>
+      </div>
+      <div class="bitgrid" id="cwBits"></div>
+      <div class="bitnums" id="cwNums"></div>
+    </div>
+
+    <div class="legend"><b>Bit 0</b>=RUN · <b>Bit 3</b>=ENABLE · <b>Bit 4</b>=FAULT RESET (pulso, 1 scan)</div>
+
+    <div class="sliderblock">
+      <div class="sliderhead">
+        <span class="n">Referência de Velocidade</span>
+        <span class="v mono" id="refVal">0.0 Hz</span>
+      </div>
+      <input type="range" id="freqSlider" min="0" max="60" step="0.5" value="60">
+      <div class="sliderticks"><span>0Hz</span><span>15Hz</span><span>30Hz</span><span>45Hz</span><span>60Hz</span></div>
+    </div>
+    <div class="faultlink" id="autoLink">● demo automático ativo</div>
+  </div>
+
+  <!-- ===== CENTER: ATV600 + motor ===== -->
+  <div class="panel">
+    <div class="ptitle center"><span class="bar"></span>ATV600 → Motor M-101<span class="sub">Compressor</span></div>
+
+    <div class="center-body">
+      <div class="statusbadge" id="statusBadge"><span class="led"></span><span id="statusTxt">PARADO</span></div>
+
+      <div class="rotorwrap">
+        <svg viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="94" fill="#0c1119" stroke="#1a2231" stroke-width="2"/>
+          <circle cx="100" cy="100" r="94" fill="none" stroke="#212b3a" stroke-width="1" stroke-dasharray="2,6"/>
+          <g id="rotor">
+            <rect x="96" y="14" width="8" height="72" rx="4" fill="currentColor"/>
+            <rect x="96" y="114" width="8" height="72" rx="4" fill="currentColor"/>
+            <rect x="14" y="96" width="72" height="8" rx="4" fill="currentColor"/>
+            <rect x="114" y="96" width="72" height="8" rx="4" fill="currentColor"/>
+            <rect x="96" y="14" width="8" height="72" rx="4" fill="currentColor" transform="rotate(45 100 100)"/>
+            <rect x="96" y="114" width="8" height="72" rx="4" fill="currentColor" transform="rotate(45 100 100)"/>
+            <rect x="14" y="96" width="72" height="8" rx="4" fill="currentColor" transform="rotate(45 100 100)"/>
+            <rect x="114" y="96" width="72" height="8" rx="4" fill="currentColor" transform="rotate(45 100 100)"/>
+          </g>
+          <circle class="rotor-hub" cx="100" cy="100" r="26" fill="#141b28" stroke="#3a445c" stroke-width="2"/>
+          <text id="hubTxt" x="100" y="105" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" fill="#7c8aa0">0Hz</text>
+        </svg>
+      </div>
+
+      <div class="centerreadouts">
+        <div class="creadout"><div class="cv mono" id="rpmOut">0</div><div class="cl">RPM estimado</div></div>
+        <div class="creadout"><div class="cv mono" id="freqOut">0.0</div><div class="cl">Freq. saída (Hz)</div></div>
+      </div>
+
+      <div class="regstrip">
+        <div class="regitem"><span class="ra">40004</span><span class="rn">Freq (×10)</span><span class="rv mono" id="regFreq">0</span></div>
+        <div class="regitem"><span class="ra">40005</span><span class="rn">Corrente (×10)</span><span class="rv mono" id="regCurr">0</span></div>
+        <div class="regitem"><span class="ra">40006</span><span class="rn">RPM</span><span class="rv mono" id="regRpm">0</span></div>
+      </div>
+      <div class="regnote">registradores analógicos — inteiros, sem casa decimal (×10 para preservar 1 decimal)</div>
+    </div>
+
+    <div class="devicecard">
+      <span class="dn">Schneider Altivar 600</span>
+      <span class="dv mono">Slave ID: 01</span>
+    </div>
+  </div>
+
+  <!-- ===== RIGHT: status word + readings ===== -->
+  <div class="panel">
+    <div class="ptitle read"><span class="bar"></span>Leitura — Status Word<span class="sub">Do inversor</span></div>
+
+    <div class="eventloghead">Histórico de Estados (o que o inversor respondeu)</div>
+    <div class="eventlog" id="statusLog"></div>
+
+    <div class="wordblock">
+      <div class="wordlabel read">
+        <span class="n">Status Word (40003)</span>
+        <span class="h mono" id="swHex">0x0000</span>
+      </div>
+      <div class="bitgrid" id="swBits"></div>
+      <div class="bitnums" id="swNums"></div>
+    </div>
+    <div class="legend"><b>Bit 0</b>=READY · <b>Bit 1</b>=RUNNING · <b>Bit 2</b>=FAULT</div>
+
+    <div class="readgrid">
+      <div class="readcard"><div class="rv mono" id="rFreq">0.0<span class="ru">Hz</span></div><div class="rl">Frequência Atual</div></div>
+      <div class="readcard"><div class="rv mono" id="rCurr">0.0<span class="ru">A</span></div><div class="rl">Corrente do Motor</div></div>
+      <div class="readcard" id="rFaultCard"><div class="rv mono" id="rFault">0x00</div><div class="rl">Código de Falha</div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== FOOTER: Modbus TCP frame ticker (signature element) ===== -->
+<div class="footer">
+  <div class="fc tx"><span class="txrx" id="txDot"></span>TX</div>
+  <div id="frameLine" class="mono">Aguardando conexão Modbus TCP...</div>
+  <div class="fc rx"><span class="txrx" id="rxDot"></span>RX</div>
+  <div class="rtt">round-trip: <b id="rttVal">—</b> ms</div>
+</div>
+
+<script>
+(function(){
+  // ---------- build bit grids ----------
+  function buildBits(containerId, numsId, dir){
+    const grid = document.getElementById(containerId);
+    const nums = document.getElementById(numsId);
+    for(let i=15;i>=0;i--){
+      const b = document.createElement('div');
+      b.className = 'bit';
+      b.dataset.bit = i;
+      b.textContent = '0';
+      grid.appendChild(b);
+      const n = document.createElement('span');
+      n.textContent = i;
+      nums.appendChild(n);
+    }
+  }
+  buildBits('cwBits','cwNums','write');
+  buildBits('swBits','swNums','read');
+
+  function setBits(containerId, value, dir, hexId){
+    const bits = document.querySelectorAll('#'+containerId+' .bit');
+    bits.forEach(b=>{
+      const i = parseInt(b.dataset.bit);
+      const on = (value >> i) & 1;
+      const wasOn = b.classList.contains('on');
+      b.textContent = on;
+      b.classList.toggle('on', !!on);
+      b.classList.toggle(dir, !!on);
+      if(!!on !== wasOn){ b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse'); }
+    });
+    document.getElementById(hexId).textContent = '0x' + value.toString(16).padStart(4,'0').toUpperCase();
+  }
+
+  // ---------- state ----------
+  let status = 'parado'; // parado | partindo | marcha | parando | falha
+  let freqRef = 60;      // referência fixa em 60Hz — frequência e rotação nominais do motor M-C-211101
+  let freqAtual = 0;     // rampa
+  let corrente = 0;
+  let faultCode = 0;
+  let scanCount = 0;
+  let resetPulseTicks = 0;
+  let lastManual = -999;
+  let tGlobal = 0;
+  let autoDemo = true;
+  let cycleTimer = 3; // segundos até a próxima ação automática
+  let prevStatus = 'parado';
+
+  function addLog(containerId, msg, cls){
+    const el = document.getElementById(containerId);
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<span class="ts">['+tGlobal.toFixed(1)+'s]</span> <span class="msg '+cls+'">'+msg+'</span>';
+    el.appendChild(row);
+    el.scrollTop = el.scrollHeight;
+    while(el.children.length > 25) el.removeChild(el.firstChild);
+  }
+
+  const slider = document.getElementById('freqSlider');
+  slider.style.setProperty('--pct', (freqRef/60*100).toFixed(1)+'%');
+  document.getElementById('refVal').textContent = freqRef.toFixed(1) + ' Hz';
+  slider.addEventListener('input', ()=>{
+    freqRef = parseFloat(slider.value);
+    document.getElementById('refVal').textContent = freqRef.toFixed(1) + ' Hz';
+    const pct = (freqRef/60*100).toFixed(1)+'%';
+    slider.style.setProperty('--pct', pct);
+    autoDemo = false; lastManual = tGlobal;
+  });
+
+  function doStart(manual){
+    if(status==='falha' || status==='marcha' || status==='partindo') return;
+    status = 'partindo';
+    addLog('cmdLog', 'CLP envia START '+(manual?'(manual)':'(auto)')+' → Bit0=1, Bit3=1', 'cmd');
+    if(manual){ autoDemo = false; lastManual = tGlobal; }
+  }
+  function doStop(manual){
+    if(status==='parado' || status==='parando') return;
+    status = 'parando';
+    addLog('cmdLog', 'CLP envia STOP '+(manual?'(manual)':'(auto)')+' → Bit0=0, Bit3=0', 'cmd');
+    if(manual){ autoDemo = false; lastManual = tGlobal; }
+  }
+  function doReset(manual){
+    if(status!=='falha') return;
+    status = 'parado';
+    faultCode = 0;
+    resetPulseTicks = 4; // pulso do bit4 por ~4 scans (400ms)
+    addLog('cmdLog', 'CLP envia RESET '+(manual?'(manual)':'(auto)')+' → Bit4 pulsa 1x', 'cmd');
+    if(manual){ autoDemo = false; lastManual = tGlobal; }
+  }
+  function triggerFault(manual){
+    if(status==='parado') return;
+    status = 'falha';
+    faultCode = [0x02,0x03,0x07,0x0A][Math.floor(Math.random()*4)];
+    addLog('cmdLog', 'Falha ocorreu durante operação', 'alarm');
+    if(manual){ autoDemo = false; lastManual = tGlobal; }
+  }
+
+  document.getElementById('btnStart').addEventListener('click', ()=>doStart(true));
+  document.getElementById('btnStop').addEventListener('click', ()=>doStop(true));
+  document.getElementById('btnReset').addEventListener('click', ()=>doReset(true));
+  document.getElementById('faultLink').addEventListener('click', ()=>triggerFault(true));
+
+  function rnd(a){ return (Math.random()*2-1)*a; }
+
+  // ---------- scan loop: 100ms, simulating Modbus TCP polling ----------
+  const FAULT_NAMES = {0x02:'Sobrecorrente', 0x03:'Falha Externa (DI2)', 0x07:'Subtensão Barr. CC', 0x0A:'Sobrecarga Térmica'};
+
+  function tick(){
+    tGlobal += 0.1;
+    scanCount++;
+
+    // retoma o demo automático apos 15s sem interacao manual — e restaura a referência nominal
+    if(!autoDemo && (tGlobal-lastManual) > 15){
+      autoDemo = true; cycleTimer = 2;
+      freqRef = 60;
+      slider.value = 60;
+      slider.style.setProperty('--pct', '100%');
+      document.getElementById('refVal').textContent = '60.0 Hz';
+    }
+
+    // ciclo automático: liga, espera, desliga, espera, repete — sempre na referência nominal (60Hz)
+    if(autoDemo){
+      cycleTimer -= 0.1;
+      if(cycleTimer <= 0){
+        if(status==='parado'){ doStart(false); cycleTimer = 9 + Math.random()*4; }
+        else if(status==='marcha'){ doStop(false); cycleTimer = 4 + Math.random()*3; }
+        else if(status==='falha'){ doReset(false); cycleTimer = 2; }
+        else { cycleTimer = 2; }
+      }
+    }
+
+    // auto fault chance while running (rara, só pra dar vida à demo)
+    if(status==='marcha' && Math.random() < 0.0004){
+      triggerFault(false);
+    }
+
+    // status machine
+    const target = (status==='marcha' || status==='partindo') ? freqRef : 0;
+    const rampStep = 60/30; // ~2Hz per 100ms tick -> 0-60Hz em ~3s
+    if(freqAtual < target) freqAtual = Math.min(target, freqAtual + rampStep);
+    else if(freqAtual > target) freqAtual = Math.max(target, freqAtual - rampStep);
+
+    if(status==='partindo' && freqAtual >= freqRef - 0.05 && freqRef>0){ status='marcha'; }
+    if(status==='partindo' && freqRef===0){ status='marcha'; } // liga em 0Hz também é "marcha" (em espera)
+    if(status==='parando' && freqAtual <= 0.05){ status='parado'; freqAtual=0; }
+
+    // log de transição de estado — mostra a fila de espera: cada fase só começa quando a anterior termina
+    if(status !== prevStatus){
+      if(status==='partindo') addLog('statusLog', 'Aguardando rampa de aceleração... (READY=1)', 'warn');
+      else if(status==='marcha') addLog('statusLog', 'Velocidade nominal atingida → RUNNING=1', 'ok');
+      else if(status==='parando') addLog('statusLog', 'Aguardando rampa de desaceleração...', 'warn');
+      else if(status==='parado') addLog('statusLog', 'Parado, pronto para novo comando → RUNNING=0', 'ok');
+      else if(status==='falha') addLog('statusLog', 'FALHA 0x'+faultCode.toString(16).padStart(2,'0').toUpperCase()+' → aguardando RESET', 'alarm');
+      prevStatus = status;
+    }
+
+    const running = (status==='marcha' || status==='partindo');
+    const ready = status !== 'falha';
+
+    // corrente simulada: proporcional a frequencia + ruido + leve pico na partida
+    let targetCurr = (freqAtual/60) * 68;
+    if(status==='partindo') targetCurr += 14*(1-freqAtual/60);
+    corrente += (targetCurr - corrente)*0.3 + rnd(0.4);
+    corrente = Math.max(0, corrente);
+    if(status==='falha' || status==='parado') corrente *= 0.85;
+
+    // ---- Control Word (CLP -> ATV600) ----
+    let cw = 0;
+    if(running) cw |= (1<<0);       // RUN
+    if(running) cw |= (1<<3);       // ENABLE
+    if(resetPulseTicks > 0){ cw |= (1<<4); resetPulseTicks--; } // FAULT RESET pulso
+    setBits('cwBits', cw, 'write', 'cwHex');
+
+    // ---- Status Word (ATV600 -> CLP) ----
+    let sw = 0;
+    if(ready) sw |= (1<<0);         // READY
+    if(status==='marcha') sw |= (1<<1); // RUNNING
+    if(status==='falha') sw |= (1<<2);  // FAULT
+    if(status==='partindo' || status==='parando') sw |= (1<<3); // WARNING/transição
+    setBits('swBits', sw, 'read', 'swHex');
+
+    render();
+  }
+
+  function render(){
+    // scan pill
+    document.getElementById('scanCount').textContent = '#' + scanCount;
+
+    // rotor
+    const rotor = document.getElementById('rotor');
+    const hub = document.getElementById('hubTxt');
+    if(freqAtual > 0.3){
+      const dur = Math.max(0.15, 1.6 * (60/Math.max(freqAtual,1)) / 10);
+      rotor.style.animation = `spin ${dur}s linear infinite`;
+    } else {
+      rotor.style.animation = 'none';
+    }
+    hub.textContent = freqAtual.toFixed(0)+'Hz';
+
+    // cor do rotor: verde acelerando/rodando, vermelho desacelerando/falha, cinza parado
+    let rotorColor = '#3a445c'; // parado (cinza)
+    if(status==='partindo' || status==='marcha') rotorColor = '#34d399'; // acelerando / em marcha = verde
+    else if(status==='parando') rotorColor = '#ff4d6a'; // desacelerando = vermelho
+    else if(status==='falha') rotorColor = '#ff4d6a'; // falha = vermelho
+    rotor.style.color = rotorColor;
+
+    // status badge
+    const badge = document.getElementById('statusBadge');
+    const txt = document.getElementById('statusTxt');
+    let cls = '', label = 'PARADO';
+    if(status==='marcha'){ cls='marcha'; label='EM MARCHA'; }
+    else if(status==='partindo'){ cls='partindo'; label='PARTINDO'; }
+    else if(status==='parando'){ cls='partindo'; label='PARANDO'; }
+    else if(status==='falha'){ cls='falha'; label='FALHA'; }
+    badge.className = 'statusbadge' + (cls?' '+cls:'');
+    txt.textContent = label;
+
+    // center readouts
+    document.getElementById('freqOut').textContent = freqAtual.toFixed(1);
+    document.getElementById('rpmOut').textContent = Math.round(freqAtual/60*1783);
+
+    // registradores analógicos (valores inteiros, escala x10 no caso de freq/corrente)
+    document.getElementById('regFreq').textContent = Math.round(freqAtual*10);
+    document.getElementById('regCurr').textContent = Math.round(corrente*10);
+    document.getElementById('regRpm').textContent = Math.round(freqAtual/60*1783);
+
+    // right readings
+    document.getElementById('rFreq').innerHTML = freqAtual.toFixed(1)+'<span class="ru">Hz</span>';
+    document.getElementById('rCurr').innerHTML = corrente.toFixed(1)+'<span class="ru">A</span>';
+    const faultCard = document.getElementById('rFaultCard');
+    const faultEl = document.getElementById('rFault');
+    if(status==='falha'){
+      faultEl.textContent = '0x'+faultCode.toString(16).padStart(2,'0').toUpperCase();
+      faultCard.classList.add('warn');
+      faultCard.title = FAULT_NAMES[faultCode] || 'Falha';
+    } else {
+      faultEl.textContent = '0x00';
+      faultCard.classList.remove('warn');
+      faultCard.title = '';
+    }
+
+    // demo indicator
+    const autoLink = document.getElementById('autoLink');
+    autoLink.textContent = autoDemo ? '● demo automático ativo' : '○ modo manual (retoma sozinho em alguns segundos)';
+    autoLink.style.color = autoDemo ? 'var(--read)' : 'var(--faint)';
+
+    // button enable states
+    document.getElementById('btnStart').classList.toggle('disabled', status!=='parado');
+    document.getElementById('btnStop').classList.toggle('disabled', status==='parado'||status==='parando');
+    document.getElementById('btnReset').classList.toggle('disabled', status!=='falha');
+
+    // footer Modbus ticker
+    updateTicker();
+  }
+
+  // ---------- footer: simulated Modbus TCP frame ticker ----------
+  const txDot = document.getElementById('txDot');
+  const rxDot = document.getElementById('rxDot');
+  const frameLine = document.getElementById('frameLine');
+  const rttVal = document.getElementById('rttVal');
+  let tickerPhase = 0;
+
+  function updateTicker(){
+    tickerPhase = (tickerPhase+1) % 2;
+    const cwHex = document.getElementById('cwHex').textContent;
+    const swHex = document.getElementById('swHex').textContent;
+    const rtt = (6 + Math.random()*9).toFixed(1);
+    rttVal.textContent = rtt;
+
+    if(tickerPhase===0){
+      txDot.classList.add('active'); rxDot.classList.remove('active');
+      frameLine.innerHTML = `<span class="fn">FC06</span> Write Single Register &nbsp;→&nbsp; <span class="addr">40001</span> (Control Word) = <span class="addr">${cwHex}</span>`;
+    } else {
+      txDot.classList.remove('active'); rxDot.classList.add('active');
+      frameLine.innerHTML = `<span class="fn2">FC03</span> Read Holding Registers &nbsp;←&nbsp; <span class="addr">40003</span> (Status Word) = <span class="addr">${swHex}</span> &nbsp;|&nbsp; <span class="addr">40004</span> (Freq) = <span class="addr">${Math.round(freqAtual*10)}</span>`;
+    }
+  }
+
+  // ---------- CSS keyframe for rotor (injected, depends on runtime duration) ----------
+  const styleTag = document.createElement('style');
+  styleTag.textContent = `@keyframes spin { from{ transform: rotate(0deg);} to { transform: rotate(360deg);} }`;
+  document.head.appendChild(styleTag);
+
+  render();
+  setInterval(tick, 100);
+})();
+</script>
+</body>
+</html>
